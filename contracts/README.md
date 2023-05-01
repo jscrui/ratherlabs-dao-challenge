@@ -1,6 +1,10 @@
 # Sample Hardhat Project
 
 
+Notes: 
+
+Contract was bigger to 24k so I decided to optimize it over 200 runs 
+
 Try running some of the following tasks:
 
 ```shell
