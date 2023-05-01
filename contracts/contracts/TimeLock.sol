@@ -7,7 +7,7 @@ contract TimeLock is TimelockController {
   /**
      * @dev Initializes the contract with the following parameters:    
      *  
-     * @param minDelay Initial minimum delay for operations.
+     * @param minDelay Initial minimum delay for operations, expressed in seconds.
      * @param proposers Accounts to be granted proposer and canceller roles
      * @param executors Accounts to be granted executor role
      * @param admin Optional account to be granted admin role; disable with zero address
