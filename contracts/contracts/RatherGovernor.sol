@@ -1,190 +1,190 @@
 // SPDX-License-Identifier: MIT 
 pragma solidity ^0.8.4;
 
-import "@openzeppelin/contracts/governance/Governor.sol";
-import "@openzeppelin/contracts/governance/extensions/GovernorSettings.sol";
-import "@openzeppelin/contracts/governance/extensions/GovernorCountingSimple.sol";
-import "@openzeppelin/contracts/governance/extensions/GovernorVotes.sol";
-import "@openzeppelin/contracts/governance/extensions/GovernorVotesQuorumFraction.sol";
-import "@openzeppelin/contracts/governance/extensions/GovernorTimelockControl.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 /**
  * @title RatherGovernor
  * @author https://github.com/jscrui
  * @notice RatherGovernor is a Governor contract for RatherDAO.
  */
-contract RatherGovernor is Governor, GovernorSettings, GovernorCountingSimple, GovernorVotes, GovernorVotesQuorumFraction, GovernorTimelockControl {
+contract RatherGovernor is Ownable {
 
-    /**
-     * GovernorVotes: 
-     * @param _tokenAddr Address of the token that will be used for voting.
-     * 
-     * GovernorTimelockControl
-     * @param _timelockAddr Address of the timelock contract.       
-     *
-     * GovernorSettings:
-     * @dev initialVotingDelay: Delay, in number of block, between the proposal is created and the vote starts. (12 secs * 300 = 3600 secs = 1 hour)
-     * @dev initialVotingPeriod: Delay, in number of blocks, between the vote start and vote ends. (12 secs * 7200 = 86400 secs = 1 day)
-     * @dev initialProposalThreshold: Minimum amount of voting power required to create a new proposal. (1000 tokens = 0.1% of the total supply)
-     * 
-     * GovernorVotesQuorumFraction:
-     * @dev quorumNumerator: The fraction is specified as numerator / denominator (100 by default). 
-     * So quorum is specified as a percent: a numerator of 10 (as is this case) corresponds to quorum being 10% of total supply.
-    */        
-    constructor(IVotes _tokenAddr, TimelockController _timelockAddr)
-        Governor("RatherGovernor")       
-        GovernorSettings(300, 7200, 1000)
-        GovernorVotes(_tokenAddr)
-        GovernorVotesQuorumFraction(10)
-        GovernorTimelockControl(_timelockAddr)
-    {}
+    event ProposalCreated(bytes32 indexed proposalHash, string title, string description, uint256 proposalDeadline, uint256 minimumVotes, string optionA, string optionB);    
+    event ProposalExecuted(bytes32 indexed proposalHash, uint256 option, uint256 votes, address indexed executor);
+    event ProposalCanceled(bytes32 indexed proposalHash, address indexed canceler);
+    event ProposalClosed(bytes32 indexed proposalHash, address indexed closer);
+    event Voted(bytes32 indexed proposalHash, address indexed voter, uint256 option);
+    
+    IERC20 public ratherToken;
 
-    /**
-     * @notice Returns the delay between the proposal is created and the vote starts, as block numbers.     
-     */
-    function votingDelay()
-        public
-        view
-        override(IGovernor, GovernorSettings)
-        returns (uint256)
-    {
-        return super.votingDelay();
+    mapping (bytes32 => mapping (address => uint256)) public Voter;
+    mapping (bytes32 => Proposal) public Proposals;    
+
+    struct Proposal {
+        uint256 creation;
+        string title;
+        string description;
+        uint256 deadline;
+        uint256 minimumVotes;
+        string optionA;
+        string optionB;
+        uint256 optionAVotes;
+        uint256 optionBVotes;            
+        bool executed;
+        bool canceled;
+        bool closed;        
     }
 
     /**
-     * @notice Returns the duration of the voting period, as number of blocks.
+     * @notice This variables are the timelapse for each step of the proposal.
+     * @dev delayTime: Delay, in seconds, between the proposal is created and the votation starts. 1 hour = 3600 seconds.
+     * @dev votingTime: Duration, in seconds, of the votation period. 1 hour = 3600 seconds.
+     * @dev minHoldToPropose: Minimum amount of voting power required to create or cancel a proposal. 1000 tokens = 0.1% of total supply.
+     * @dev executionTime: Delay, in seconds, between the votation ends and the proposal is executed. 1 hour = 3600 seconds.
      */
-    function votingPeriod()
-        public
-        view
-        override(IGovernor, GovernorSettings)
-        returns (uint256)
-    {
-        return super.votingPeriod();
-    }
-
-    /**
-     * @notice Returns the number of votes already casted at the provided block.
-     * @param blockNumber Block number at which to retrieve the number of votes.     
+    uint256 public delayTime;
+    uint256 public votingTime;
+    uint256 public executionTime;
+    uint256 public minHoldToPropose;    
+    
+    /**     
+     * @param _ratherToken The address of the RatherToken contract.     
      */
-    function quorum(uint256 blockNumber)
-        public
-        view
-        override(IGovernor, GovernorVotesQuorumFraction)
-        returns (uint256)
-    {
-        return super.quorum(blockNumber);
-    }
-
-    /**
-     * @notice Returns the current number of votes in support of a proposal
-     * @param account The address of the account to check
-     * @param blockNumber Block number at which to retrieve the number of votes
-     */
-    function getVotes(address account, uint256 blockNumber)
-        public
-        view
-        override(Governor, IGovernor)
-        returns (uint256)
-    {
-        return super.getVotes(account, blockNumber);
-    }
-
-    /**
-     * @notice Returns the state of a proposal.
-     * @param proposalId ID of the proposal to query.
-     */
-    function state(uint256 proposalId)
-        public
-        view
-        override(Governor, GovernorTimelockControl)
-        returns (ProposalState)
-    {
-        return super.state(proposalId);
-    }
-
-    /**
-     * @notice Create a new proposal. Vote start "x" blocks after the proposal is created and ends "x" blocks after the voting starts.
-     * @param targets Addresses representing the contracts or accounts that will be affected by the proposal.
-     * @param values Unsigned integers representing the amount of Ether (in wei) that will be sent to each corresponding target address. 
-     * @param calldatas Array of bytes representing the encoded function call data for each corresponding target address.
-     * @param description String representing a brief description of the proposal.
-     */
-    function propose(address[] memory targets, uint256[] memory values, bytes[] memory calldatas, string memory description)
-        public
-        override(Governor, IGovernor)
-        returns (uint256)
-    {
-        return super.propose(targets, values, calldatas, description);
+    constructor(address _ratherToken){
+        ratherToken = IERC20(_ratherToken);
+        delayTime = 3600; // 1 hour
+        votingTime = 3600; // 1 hour
+        executionTime = 3600; // 1 hour        
+        minHoldToPropose = 1000; // 1000 tokens        
     }
  
-    /**
-     * @notice Returns the minimum amount of voting power required to create a new proposal.
-     * @return The proposal threshold as a uint256 value.
+    /** 
+     * @notice This modifier checks if the msg.sender has enough tokens to create or cancel a proposal.     
      */
-    function proposalThreshold()
-        public
-        view
-        override(Governor, GovernorSettings)
-        returns (uint256)
-    {
-        return super.proposalThreshold();
+    modifier hasEnoughTokens() {
+        require(ratherToken.balanceOf(msg.sender) >= minHoldToPropose * 1e18, "Not enough tokens to perform this action");
+        _;
     }
 
     /**
-     * @notice Execute a successful proposal. This requires the quorum to be reached, the vote to be successful, and the deadline to be reached. 
-     * @param proposalId ID of Proposal to execute. 
-     * @param targets Addresses representing the contracts or accounts that will be affected by the proposal.
-     * @param values Unsigned integers representing the amount of Ether (in wei) that will be sent to each corresponding target address.
-     * @param calldatas Array of bytes representing the encoded function call data for each corresponding target address.
-     * @param descriptionHash Bytes32 which itself is the keccak256 hash of the description string.
+     * @notice This function creates a new proposal.
+     * @param _title The title of the proposal.
+     * @param _description The description of the proposal.
+     * @param _deadline Time to consider the proposal is ready to be executed or canceled.
+     * @param _minimumVotes The minimum votes required for the proposal to be executable.
+     * @param _optionA The first option of the proposal.
+     * @param _optionB The second option of the proposal.
      */
-    function _execute(uint256 proposalId, address[] memory targets, uint256[] memory values, bytes[] memory calldatas, bytes32 descriptionHash)
-        internal
-        override(Governor, GovernorTimelockControl)
-    {
-        super._execute(proposalId, targets, values, calldatas, descriptionHash);
+    function create(string memory _title, string memory _description, uint256 _deadline, uint256 _minimumVotes, string memory _optionA, string memory _optionB) public hasEnoughTokens {           
+        require(keccak256(abi.encodePacked(_title)) != "", "Title should not be empty");
+        require(keccak256(abi.encodePacked(_description)) != "", "Description should not be empty");         
+        require(keccak256(abi.encodePacked(_optionA)) != "", "Option A should not be empty");
+        require(keccak256(abi.encodePacked(_optionB)) != "", "Option B should not be empty");
+        require(_minimumVotes != 0, "Minimum votes should be greater than 0");
+        
+        bytes32 _proposalHash = keccak256(abi.encodePacked(block.timestamp, _title, _description, _deadline, _minimumVotes, _optionA, _optionB));
+        
+        Proposals[_proposalHash] = Proposal(block.timestamp, _title, _description, _deadline, _minimumVotes, _optionA, _optionB, 0, 0, false, false, false);
+
+        emit ProposalCreated(_proposalHash, _title, _description, _deadline, _minimumVotes, _optionA, _optionB);
+    }
+    
+    function vote(bytes32 _proposalHash, uint256 _option) public {
+        require(Voter[_proposalHash][msg.sender] == 0, "You already voted for this proposal");                
+        Proposal storage proposal = Proposals[_proposalHash];        
+        require(proposal.creation + delayTime < block.timestamp, "Votation is not running yet.");   
+        require(proposal.creation + delayTime + votingTime + proposal.deadline > block.timestamp, "Votation already happened.");
+        require(!proposal.canceled, "Proposal canceled.");
+        require(!proposal.closed, "Proposal closed.");            
+        require(!proposal.executed, "Proposal already executed.");                
+        require(_option == 1 || _option == 2, "Option should be 1 or 2");                
+
+        // Should improve the efficiency of gas in the next two lines
+        Proposals[_proposalHash].optionAVotes += _option == 1 ? 1 : 0;
+        Proposals[_proposalHash].optionBVotes += _option == 2 ? 1 : 0;
+        
+        Voter[_proposalHash][msg.sender] = _option;
+
+        emit Voted(_proposalHash, msg.sender, _option); 
     }
 
     /**
-     * @notice Cancel a proposal.
-     * @param targets Addresses representing the contracts or accounts that will be affected by the proposal.
-     * @param values Unsigned integers representing the amount of Ether (in wei) that will be sent to each corresponding target address.
-     * @param calldatas Array of bytes representing the encoded function call data for each corresponding target address.
-     * @param descriptionHash Bytes32 which itself is the keccak256 hash of the description string.
+     * @notice This function executes a proposal and can be called by anyone.
+     * @param _proposalHash The hash of the proposal to be executed.
      */
-    function _cancel(address[] memory targets, uint256[] memory values, bytes[] memory calldatas, bytes32 descriptionHash)
-        internal
-        override(Governor, GovernorTimelockControl)
-        returns (uint256)
-    {
-        return super._cancel(targets, values, calldatas, descriptionHash);
+    function execute(bytes32 _proposalHash) public {
+        Proposal storage proposal = Proposals[_proposalHash];        
+        require(!proposal.canceled, "Proposal already canceled.");
+        require(!proposal.closed, "Proposal already closed.");
+        require(!proposal.executed, "Proposal already executed.");        
+        require(proposal.creation + proposal.deadline + executionTime < block.timestamp, "Proposal not ready for execution.");                
+        require(proposal.optionAVotes + proposal.optionBVotes >= proposal.minimumVotes, "Not enough votes to execute proposal.");
+        require(proposal.optionAVotes != proposal.optionBVotes, "Votes are equal.");
+
+        /** Calculate Winner */
+        uint256 option = Proposals[_proposalHash].optionAVotes > Proposals[_proposalHash].optionBVotes ? 1 : 2;
+
+        /** Calculate votes */
+        uint256 votes = option == 1 ? Proposals[_proposalHash].optionAVotes : Proposals[_proposalHash].optionBVotes;
+
+        /** Perform the action of the proposal 
+         * 
+         *          
+        */
+
+        /** Update to Executed */
+        Proposals[_proposalHash].executed = true;
+
+        emit ProposalExecuted(_proposalHash, option, votes, msg.sender);
+    }
+    
+    /**
+     * @notice This function cancels a proposal due to lack of votes.
+     * @param _proposalHash The hash of the proposal to be canceled.
+     */
+    function cancel(bytes32 _proposalHash) public hasEnoughTokens {        
+        require(Proposals[_proposalHash].deadline < block.timestamp, "Proposal not ready for cancelation.");
+        require(!Proposals[_proposalHash].canceled, "Proposal already canceled");
+        require(Proposals[_proposalHash].optionAVotes + Proposals[_proposalHash].optionBVotes < Proposals[_proposalHash].minimumVotes, "Proposal with this amount of votes can't be cancelled.");
+        
+        Proposals[_proposalHash].canceled = true;
+        
+        emit ProposalCanceled(_proposalHash, msg.sender);
     }
 
     /**
-     * @notice Address through which the governor executes action. Will be overloaded by module that execute actions through another contract such as a timelock.     
+     * @notice This function close a proposal due tie in votes.
+     * @param _proposalHash The hash of the proposal to be closed.
      */
-    function _executor()
-        internal
-        view
-        override(Governor, GovernorTimelockControl)
-        returns (address)
-    {
-        return super._executor();
+    function close(bytes32 _proposalHash) public hasEnoughTokens {
+        require(Proposals[_proposalHash].deadline < block.timestamp, "Proposal not ready to be closed.");
+        require(Proposals[_proposalHash].optionAVotes == Proposals[_proposalHash].optionBVotes, "Proposal with different amount of votes can't be closed.");
+        require(!Proposals[_proposalHash].closed, "Proposal already closed.");
+        require(!Proposals[_proposalHash].canceled, "Proposal already canceled.");
+
+        Proposals[_proposalHash].closed = true;
+
+        emit ProposalClosed(_proposalHash, msg.sender);
     }
 
     /**
-     * @notice Checks whether the contract supports a given interface identifier.
-     * @param interfaceId The identifier of the interface to check.
-     * @return true if the contract implements the specified interface, false otherwise.
+     * @notice This function returns the proposal data.
+     * @param _proposalHash The hash of the proposal to be returned.
      */
-    function supportsInterface(bytes4 interfaceId)
-        public
-        view
-        override(Governor, GovernorTimelockControl)
-        returns (bool)
-    {
-        return super.supportsInterface(interfaceId);
+    function getProposal(bytes32 _proposalHash) public view returns (Proposal memory) {
+        return Proposals[_proposalHash];
     }
+
+    /**
+     * @notice This function returns the votes of a proposal.
+     * @param _proposalHash The hash of the proposal to be returned.
+     */
+    function getVotes(bytes32 _proposalHash) public view returns (uint256, uint256) {
+        return (Proposals[_proposalHash].optionAVotes, Proposals[_proposalHash].optionBVotes);    
+    }
+
+
 
 }

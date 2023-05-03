@@ -3,8 +3,7 @@
 
 Notes: 
 
-RatherToken:  0xc9a9D1B02c4698eCc3d42F38272a59388FC50f7B
-RatherGovernor:  0x79761D8117AA1a27652D0951E2D9BE7038E866F6
+Contract was bigger to 24k so I decided to optimize it over 200 runs 
 
 Try running some of the following tasks:
 

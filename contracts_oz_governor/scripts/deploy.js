@@ -10,18 +10,31 @@ async function main() {
   // Signers 
   [Owner, Admin] = await ethers.getSigners();
 
+  console.log("Owner Addr: ", Owner.address);
+  console.log("Admin Addr: ", Admin.address);
+
   // Deploying the RatherToken contract
   const RatherToken = await hre.ethers.getContractFactory("RatherToken");
   const ratherToken = await RatherToken.deploy();
   await ratherToken.deployed();
 
+  console.log('Token Addr: ', ratherToken.address )
+
+  // Deploying the TimeLock contract / 600 secs minDelay  
+  const TimeLock = await hre.ethers.getContractFactory("TimeLock");
+  const timeLock = await TimeLock.deploy(600, [], [], Admin.address);
+  await timeLock.deployed();
+
+  console.log('Timelock Addr: ', timeLock.address);
+
+
   // Deploying the RatherGovernor contract
   const RatherGovernor = await hre.ethers.getContractFactory("RatherGovernor");
-  const ratherGovernor = await RatherGovernor.deploy(ratherToken.address);
+  const ratherGovernor = await RatherGovernor.deploy(ratherToken.address, timeLock.address);
   await ratherGovernor.deployed();
 
-  console.log("RatherToken: ", ratherToken.address);
-  console.log("RatherGovernor: ", ratherGovernor.address);  
+  console.log('RatherGovernor: ', ratherGovernor.address);
+  
 
 }
 
