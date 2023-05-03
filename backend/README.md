@@ -8,7 +8,7 @@ To get started with this project, follow these steps:
 
 * Clone this repository
 * Install the dependencies by running `npm install` or `yarn install`
-* Start the server by running `npm start` or `npm start:dev` to see live changes.
+* Start the server by running `npm start` or `npm run start:dev` to see live changes.
 
 ## Endpoint
 
